@@ -7,70 +7,85 @@ from zoneinfo import ZoneInfo
 import requests
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
-POLL_MINUTES = 10
-
+POLL_MINUTES = int(os.getenv("POLL_MINUTES", "10"))
 STATE_DIR = os.getenv("STATE_DIR", "/var/data")
 STATE_FILE = os.path.join(STATE_DIR, "closer_alert_state.json")
 
 ET = ZoneInfo("America/New_York")
 
 
-def now_utc_iso():
+def log(message: str) -> None:
+    print(message, flush=True)
+
+
+def now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def now_et():
+def now_et() -> datetime:
     return datetime.now(ET)
 
 
 def in_quiet_hours() -> bool:
-    current_et = now_et()
-    hour = current_et.hour
-    return 2 <= hour < 13  # 2:00 AM ET through 12:59 PM ET
+    hour = now_et().hour
+    return 2 <= hour < 13
 
 
-def ensure_state_dir():
+def ensure_state_dir() -> None:
     os.makedirs(STATE_DIR, exist_ok=True)
 
 
-def load_state():
+def load_state() -> dict:
     ensure_state_dir()
     if not os.path.exists(STATE_FILE):
-        return {"posted_events": []}
+        return {
+            "posted_events": [],
+            "processed_final_games": {},
+        }
 
     try:
         with open(STATE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            state = json.load(f)
     except Exception:
-        return {"posted_events": []}
+        state = {}
+
+    state.setdefault("posted_events", [])
+    state.setdefault("processed_final_games", {})
+    return state
 
 
-def save_state(state):
+def save_state(state: dict) -> None:
     ensure_state_dir()
-    posted = state.get("posted_events", [])
-    if len(posted) > 5000:
-        state["posted_events"] = posted[-3000:]
+
+    posted_events = state.get("posted_events", [])
+    if len(posted_events) > 5000:
+        state["posted_events"] = posted_events[-3000:]
+
+    processed_final_games = state.get("processed_final_games", {})
+    if len(processed_final_games) > 500:
+        items = list(processed_final_games.items())[-300:]
+        state["processed_final_games"] = dict(items)
 
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
 
 
-def post_discord(embed):
+def post_discord(embed: dict) -> bool:
     if not DISCORD_WEBHOOK_URL:
         raise RuntimeError("DISCORD_WEBHOOK_URL is not set")
 
     payload = {"embeds": [embed]}
     r = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=30)
 
-    if r.status_code not in [200, 204]:
-        print(f"[BOT] Discord error: {r.status_code} {r.text[:300]}")
+    if r.status_code not in (200, 204):
+        log(f"[BOT] Discord error: {r.status_code} {r.text[:300]}")
         return False
 
-    print(f"[BOT] Posted to Discord: {embed.get('title', 'No title')}")
+    log(f"[BOT] Posted to Discord: {embed.get('title', 'No title')}")
     return True
 
 
-def build_save_embed(team, pitcher, stats, score):
+def build_save_embed(team: str, pitcher: str, stats: str, score: str) -> dict:
     return {
         "author": {"name": "The Bullpen Coach"},
         "title": "🚨 SAVE RECORDED",
@@ -85,7 +100,7 @@ def build_save_embed(team, pitcher, stats, score):
     }
 
 
-def build_blown_embed(team, pitcher, stats, score):
+def build_blown_embed(team: str, pitcher: str, stats: str, score: str) -> dict:
     return {
         "author": {"name": "The Bullpen Coach"},
         "title": "⚠️ BLOWN SAVE",
@@ -100,7 +115,7 @@ def build_blown_embed(team, pitcher, stats, score):
     }
 
 
-def get_games():
+def get_games() -> list:
     today_et = now_et().date()
     yesterday_et = today_et - timedelta(days=1)
 
@@ -112,38 +127,57 @@ def get_games():
         r.raise_for_status()
         data = r.json()
 
-        if "dates" not in data or not data["dates"]:
+        if not data.get("dates"):
             continue
 
-        for g in data["dates"][0]["games"]:
-            games.append(g)
+        for game in data["dates"][0].get("games", []):
+            games.append(game)
 
     return games
 
 
-def process_games():
+def build_final_stamp(game: dict) -> str:
+    status = game.get("status", {}).get("detailedState", "")
+    away_score = game.get("teams", {}).get("away", {}).get("score", "")
+    home_score = game.get("teams", {}).get("home", {}).get("score", "")
+    game_date = game.get("gameDate", "")
+    return f"{status}|{away_score}|{home_score}|{game_date}"
+
+
+def process_games() -> None:
     state = load_state()
     posted_events = set(state.get("posted_events", []))
+    processed_final_games = state.get("processed_final_games", {})
 
     games = get_games()
-    total_final_games = 0
-    total_saves = 0
-    total_blown = 0
+    total_final_games_seen = 0
+    total_new_final_games = 0
+    total_saves_found = 0
+    total_blown_found = 0
     total_posted = 0
 
-    print(f"[BOT] Games found: {len(games)}")
+    log(f"[BOT] Games found: {len(games)}")
 
     for game in games:
         status = game.get("status", {}).get("detailedState", "")
         if status != "Final":
             continue
 
-        total_final_games += 1
+        total_final_games_seen += 1
+
         game_pk = game.get("gamePk")
         if not game_pk:
             continue
 
-        print(f"[BOT] Checking final game: {game_pk}")
+        game_pk_str = str(game_pk)
+        final_stamp = build_final_stamp(game)
+
+        if processed_final_games.get(game_pk_str) == final_stamp:
+            log(f"[BOT] Skipping already processed final game: {game_pk}")
+            continue
+
+        total_new_final_games += 1
+        log(f"[BOT] Processing new final game: {game_pk}")
 
         url = f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live"
         r = requests.get(url, timeout=30)
@@ -152,7 +186,8 @@ def process_games():
 
         box = data.get("liveData", {}).get("boxscore", {}).get("teams", {})
         if not box:
-            print(f"[BOT] No boxscore found for game {game_pk}")
+            log(f"[BOT] No boxscore found for game {game_pk}")
+            processed_final_games[game_pk_str] = final_stamp
             continue
 
         away_team_box = box.get("away", {})
@@ -166,6 +201,7 @@ def process_games():
 
         game_saves = 0
         game_blown = 0
+        game_posted = 0
 
         for side in ["home", "away"]:
             team_box = box.get(side, {})
@@ -178,6 +214,7 @@ def process_games():
                     continue
 
                 pitcher = p.get("person", {}).get("fullName", "Unknown Pitcher")
+                pitcher_id = p.get("person", {}).get("id", pitcher)
 
                 ip = pitching_stats.get("inningsPitched", "0.0")
                 h = pitching_stats.get("hits", 0)
@@ -188,66 +225,76 @@ def process_games():
                 stat_line = f"IP: {ip} | H: {h} | ER: {er} | BB: {bb} | K: {k}"
 
                 if pitching_stats.get("saves", 0) > 0:
-                    total_saves += 1
+                    total_saves_found += 1
                     game_saves += 1
-                    key = f"save_{game_pk}_{pitcher}"
+                    event_key = f"save_{game_pk}_{pitcher_id}"
 
-                    if key not in posted_events:
+                    if event_key in posted_events:
+                        log(f"[BOT] Skipping duplicate save: {pitcher} | {team}")
+                    else:
                         embed = build_save_embed(team, pitcher, stat_line, score)
                         if post_discord(embed):
-                            posted_events.add(key)
+                            posted_events.add(event_key)
                             total_posted += 1
-                            print(f"[BOT] SAVE: {pitcher} | {team}")
-                    else:
-                        print(f"[BOT] Skipping duplicate save: {pitcher} | {team}")
+                            game_posted += 1
+                            log(f"[BOT] SAVE: {pitcher} | {team}")
 
                 if pitching_stats.get("blownSaves", 0) > 0:
-                    total_blown += 1
+                    total_blown_found += 1
                     game_blown += 1
-                    key = f"blown_{game_pk}_{pitcher}"
+                    event_key = f"blown_{game_pk}_{pitcher_id}"
 
-                    if key not in posted_events:
+                    if event_key in posted_events:
+                        log(f"[BOT] Skipping duplicate blown save: {pitcher} | {team}")
+                    else:
                         embed = build_blown_embed(team, pitcher, stat_line, score)
                         if post_discord(embed):
-                            posted_events.add(key)
+                            posted_events.add(event_key)
                             total_posted += 1
-                            print(f"[BOT] BLOWN SAVE: {pitcher} | {team}")
-                    else:
-                        print(f"[BOT] Skipping duplicate blown save: {pitcher} | {team}")
+                            game_posted += 1
+                            log(f"[BOT] BLOWN SAVE: {pitcher} | {team}")
 
-        print(
+        processed_final_games[game_pk_str] = final_stamp
+
+        log(
             f"[BOT] Game {game_pk} complete | "
-            f"Saves found: {game_saves} | Blown saves found: {game_blown}"
+            f"Saves found: {game_saves} | "
+            f"Blown saves found: {game_blown} | "
+            f"Posted: {game_posted}"
         )
 
     state["posted_events"] = list(posted_events)
+    state["processed_final_games"] = processed_final_games
     save_state(state)
 
-    print(
-        f"[BOT] Loop summary | Final games: {total_final_games} | "
-        f"Total saves found: {total_saves} | Total blown saves found: {total_blown} | "
+    log(
+        f"[BOT] Loop summary | "
+        f"Final games seen: {total_final_games_seen} | "
+        f"New finals processed: {total_new_final_games} | "
+        f"Saves found: {total_saves_found} | "
+        f"Blown saves found: {total_blown_found} | "
         f"Posted this loop: {total_posted}"
     )
 
 
-def main():
-    print("[BOT] === CLOSER ALERT BOT STARTED ===")
-    print(f"[BOT] Poll interval: {POLL_MINUTES} minutes")
-    print(f"[BOT] State file: {STATE_FILE}")
+def main() -> None:
+    log("[BOT] === CLOSER ALERT BOT STARTED ===")
+    log(f"[BOT] Poll interval: {POLL_MINUTES} minutes")
+    log(f"[BOT] State file: {STATE_FILE}")
 
     while True:
         current_et = now_et().strftime("%Y-%m-%d %I:%M:%S %p %Z")
-        print(f"[BOT] Loop start | ET time: {current_et}")
+        log(f"[BOT] Loop start | ET time: {current_et}")
 
         try:
             if in_quiet_hours():
-                print("[BOT] Quiet hours active (2:00 AM ET - 1:00 PM ET). Skipping this loop.")
+                log("[BOT] Quiet hours active (2:00 AM ET - 1:00 PM ET). Skipping this loop.")
             else:
                 process_games()
         except Exception as e:
-            print(f"[BOT] ERROR: {e}")
+            log(f"[BOT] ERROR: {e}")
 
-        print(f"[BOT] Sleeping {POLL_MINUTES} minutes")
+        log(f"[BOT] Sleeping {POLL_MINUTES} minutes")
         time.sleep(POLL_MINUTES * 60)
 
 
