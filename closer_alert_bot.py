@@ -70,19 +70,45 @@ def save_state(state: dict) -> None:
         json.dump(state, f, indent=2)
 
 
-def post_discord(embed: dict) -> bool:
+def post_discord(embed: dict, retries: int = 3) -> bool:
     if not DISCORD_WEBHOOK_URL:
         raise RuntimeError("DISCORD_WEBHOOK_URL is not set")
 
     payload = {"embeds": [embed]}
-    r = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=30)
 
-    if r.status_code not in (200, 204):
+    for attempt in range(1, retries + 1):
+        try:
+            r = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=30)
+        except Exception as e:
+            log(f"[BOT] Discord request exception on attempt {attempt}: {e}")
+            time.sleep(2 * attempt)
+            continue
+
+        if r.status_code in (200, 204):
+            log(f"[BOT] Posted to Discord: {embed.get('title', 'No title')}")
+            time.sleep(1.5)
+            return True
+
+        if r.status_code == 429:
+            retry_after = 5
+            try:
+                retry_after = max(1, int(r.json().get("retry_after", 5)))
+            except Exception:
+                pass
+            log(f"[BOT] Discord rate limit hit. Sleeping {retry_after}s")
+            time.sleep(retry_after)
+            continue
+
+        if r.status_code >= 500:
+            wait_time = 3 * attempt
+            log(f"[BOT] Discord server error {r.status_code}. Retrying in {wait_time}s")
+            time.sleep(wait_time)
+            continue
+
         log(f"[BOT] Discord error: {r.status_code} {r.text[:300]}")
         return False
 
-    log(f"[BOT] Posted to Discord: {embed.get('title', 'No title')}")
-    return True
+    return False
 
 
 def build_save_embed(team: str, pitcher: str, stats: str, score: str) -> dict:
@@ -202,6 +228,7 @@ def process_games() -> None:
         game_saves = 0
         game_blown = 0
         game_posted = 0
+        blown_posted_teams = set()
 
         for side in ["home", "away"]:
             team_box = box.get(side, {})
@@ -242,14 +269,20 @@ def process_games() -> None:
                 if pitching_stats.get("blownSaves", 0) > 0:
                     total_blown_found += 1
                     game_blown += 1
-                    event_key = f"blown_{game_pk}_{pitcher_id}"
+
+                    if team in blown_posted_teams:
+                        log(f"[BOT] Skipping extra blown save for team in same game: {team}")
+                        continue
+
+                    event_key = f"blown_team_{game_pk}_{team}"
 
                     if event_key in posted_events:
-                        log(f"[BOT] Skipping duplicate blown save: {pitcher} | {team}")
+                        log(f"[BOT] Skipping duplicate blown save team alert: {team}")
                     else:
                         embed = build_blown_embed(team, pitcher, stat_line, score)
                         if post_discord(embed):
                             posted_events.add(event_key)
+                            blown_posted_teams.add(team)
                             total_posted += 1
                             game_posted += 1
                             log(f"[BOT] BLOWN SAVE: {pitcher} | {team}")
