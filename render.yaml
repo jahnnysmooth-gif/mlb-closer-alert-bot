@@ -1,0 +1,14 @@
+services:
+  - type: worker
+    name: mlb-closer-alert-bot
+    runtime: python
+    plan: starter
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python closer_alert_bot.py"
+    envVars:
+      - key: DISCORD_WEBHOOK_URL
+        sync: false
+      - key: POLL_MINUTES
+        value: "10"
+      - key: STATE_DIR
+        value: "/var/data"
