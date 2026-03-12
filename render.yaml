@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: starter
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "python closer_alert_bot.py"
+    startCommand: "python -u closer_alert_bot.py"
     envVars:
       - key: DISCORD_WEBHOOK_URL
         sync: false
