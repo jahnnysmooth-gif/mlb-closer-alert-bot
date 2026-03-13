@@ -73,11 +73,44 @@ TEAM_COLORS = {
     "WSH": 0xAB0003,
 }
 
+TEAM_LOGOS_BY_ID = {
+    109: "https://a.espncdn.com/i/teamlogos/mlb/500/ari.png",
+    133: "https://a.espncdn.com/i/teamlogos/mlb/500/oak.png",
+    144: "https://a.espncdn.com/i/teamlogos/mlb/500/atl.png",
+    110: "https://a.espncdn.com/i/teamlogos/mlb/500/bal.png",
+    111: "https://a.espncdn.com/i/teamlogos/mlb/500/bos.png",
+    112: "https://a.espncdn.com/i/teamlogos/mlb/500/chc.png",
+    145: "https://a.espncdn.com/i/teamlogos/mlb/500/chw.png",
+    113: "https://a.espncdn.com/i/teamlogos/mlb/500/cin.png",
+    114: "https://a.espncdn.com/i/teamlogos/mlb/500/cle.png",
+    115: "https://a.espncdn.com/i/teamlogos/mlb/500/col.png",
+    116: "https://a.espncdn.com/i/teamlogos/mlb/500/det.png",
+    117: "https://a.espncdn.com/i/teamlogos/mlb/500/hou.png",
+    118: "https://a.espncdn.com/i/teamlogos/mlb/500/kc.png",
+    108: "https://a.espncdn.com/i/teamlogos/mlb/500/laa.png",
+    119: "https://a.espncdn.com/i/teamlogos/mlb/500/lad.png",
+    146: "https://a.espncdn.com/i/teamlogos/mlb/500/mia.png",
+    158: "https://a.espncdn.com/i/teamlogos/mlb/500/mil.png",
+    142: "https://a.espncdn.com/i/teamlogos/mlb/500/min.png",
+    121: "https://a.espncdn.com/i/teamlogos/mlb/500/nym.png",
+    147: "https://a.espncdn.com/i/teamlogos/mlb/500/nyy.png",
+    143: "https://a.espncdn.com/i/teamlogos/mlb/500/phi.png",
+    134: "https://a.espncdn.com/i/teamlogos/mlb/500/pit.png",
+    135: "https://a.espncdn.com/i/teamlogos/mlb/500/sd.png",
+    137: "https://a.espncdn.com/i/teamlogos/mlb/500/sf.png",
+    136: "https://a.espncdn.com/i/teamlogos/mlb/500/sea.png",
+    138: "https://a.espncdn.com/i/teamlogos/mlb/500/stl.png",
+    139: "https://a.espncdn.com/i/teamlogos/mlb/500/tb.png",
+    140: "https://a.espncdn.com/i/teamlogos/mlb/500/tex.png",
+    141: "https://a.espncdn.com/i/teamlogos/mlb/500/tor.png",
+    120: "https://a.espncdn.com/i/teamlogos/mlb/500/wsh.png",
+}
+
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))
 POLL_MINUTES = int(os.getenv("POLL_MINUTES", "10"))
 STATE_DIR = os.getenv("STATE_DIR", "/var/data")
-STATE_FILE = os.path.join(STATE_DIR, "closer_alert_state_test4.json")
+STATE_FILE = os.path.join(STATE_DIR, "closer_alert_state_test6.json")
 
 ET = ZoneInfo("America/New_York")
 
