@@ -41,6 +41,7 @@ TEAM_LOGOS = {
 
 TEAM_COLORS = {
     "ARI": 0xA71930,
+    "ATH": 0x003831,
     "ATL": 0xCE1141,
     "BAL": 0xDF4601,
     "BOS": 0xBD3039,
@@ -71,18 +72,10 @@ TEAM_COLORS = {
     "WSH": 0xAB0003,
 }
 
-TEAM_ABBR_FIX = {
-    "CWS": "CHW",  # White Sox
-}
-
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 POLL_MINUTES = int(os.getenv("POLL_MINUTES", "10"))
 STATE_DIR = os.getenv("STATE_DIR", "/var/data")
 STATE_FILE = os.path.join(STATE_DIR, "closer_alert_state.json")
-
-# Set in Render as JSON, example:
-# {"NYY":"Devin Williams","NYM":"Edwin Diaz","BAL":"Felix Bautista"}
-CLOSER_MAP_JSON = os.getenv("CLOSER_MAP_JSON", "")
 
 ET = ZoneInfo("America/New_York")
 
@@ -106,18 +99,6 @@ def in_quiet_hours() -> bool:
 
 def ensure_state_dir() -> None:
     os.makedirs(STATE_DIR, exist_ok=True)
-
-
-def load_closer_map() -> dict:
-    if not CLOSER_MAP_JSON.strip():
-        return {}
-
-    try:
-        raw = json.loads(CLOSER_MAP_JSON)
-        return {str(k).upper(): str(v) for k, v in raw.items()}
-    except Exception as e:
-        log(f"[BOT] Failed to parse CLOSER_MAP_JSON: {e}")
-        return {}
 
 
 def load_state() -> dict:
@@ -195,19 +176,19 @@ def post_discord(embed: dict, retries: int = 3) -> bool:
 
     return False
 
-def build_save_embed(team, pitcher, stats, score, team_abbr):
 
-    logo = f"https://a.espncdn.com/i/teamlogos/mlb/500/{team_abbr.lower()}.png"
+def build_save_embed(team: str, pitcher: str, stats: str, score: str, team_abbr: str) -> dict:
+    logo = TEAM_LOGOS.get(team_abbr)
     color = TEAM_COLORS.get(team_abbr, 0x2ECC71)
 
     embed = {
-        "author": {"name": "The Bullpen Coach", "icon_url": logo},
+        "author": {"name": "The Bullpen Coach", "icon_url": logo} if logo else {"name": "The Bullpen Coach"},
         "title": "🚨 SAVE RECORDED",
         "description": f"**Final Score**\n{score}",
         "color": color,
         "fields": [
             {"name": "Team", "value": team, "inline": False},
-            {"name": "Closer", "value": pitcher, "inline": False},
+            {"name": "Pitcher", "value": pitcher, "inline": False},
             {"name": "Pitching Line", "value": stats, "inline": False},
         ],
         "timestamp": now_utc_iso(),
@@ -219,30 +200,12 @@ def build_save_embed(team, pitcher, stats, score, team_abbr):
     return embed
 
 
-def build_closer_alert_embed(team: str, pitcher: str, expected_closer: str, stats: str, score: str) -> dict:
-    return {
-        "author": {"name": "The Bullpen Coach"},
-        "title": "🚨 CLOSER ALERT",
-        "color": 0xE74C3C,
-        "fields": [
-            {"name": "Team", "value": team, "inline": False},
-            {"name": "Save Recorded By", "value": pitcher, "inline": False},
-            {"name": "Expected Closer", "value": expected_closer, "inline": False},
-            {"name": "Line", "value": stats, "inline": False},
-            {"name": "Note", "value": "Possible bullpen change.", "inline": False},
-        ],
-        "footer": {"text": score},
-        "timestamp": now_utc_iso(),
-    }
-
-
-def build_blown_embed(team, pitcher, stats, score, team_abbr):
-
-    logo = f"https://a.espncdn.com/i/teamlogos/mlb/500/{team_abbr.lower()}.png"
+def build_blown_embed(team: str, pitcher: str, stats: str, score: str, team_abbr: str) -> dict:
+    logo = TEAM_LOGOS.get(team_abbr)
     color = TEAM_COLORS.get(team_abbr, 0xE67E22)
 
     embed = {
-        "author": {"name": "The Bullpen Coach", "icon_url": logo},
+        "author": {"name": "The Bullpen Coach", "icon_url": logo} if logo else {"name": "The Bullpen Coach"},
         "title": "⚠️ BLOWN SAVE",
         "description": f"**Final Score**\n{score}",
         "color": color,
@@ -293,7 +256,6 @@ def process_games() -> None:
     state = load_state()
     posted_events = set(state.get("posted_events", []))
     processed_final_games = state.get("processed_final_games", {})
-    closer_map = load_closer_map()
 
     games = get_games()
     total_final_games_seen = 0
@@ -354,8 +316,6 @@ def process_games() -> None:
             team_box = box.get(side, {})
             team = team_box.get("team", {}).get("name", "Unknown Team")
             team_abbr = team_box.get("team", {}).get("abbreviation", "").upper()
-team_abbr = TEAM_ABBR_FIX.get(team_abbr, team_abbr)
-            expected_closer = closer_map.get(team_abbr, "")
             players = team_box.get("players", {})
 
             for p in players.values():
@@ -382,31 +342,18 @@ team_abbr = TEAM_ABBR_FIX.get(team_abbr, team_abbr)
                     if event_key in posted_events:
                         log(f"[BOT] Skipping duplicate save: {pitcher} | {team}")
                     else:
-                        is_expected_closer = (
-                            expected_closer.strip().lower() == pitcher.strip().lower()
-                            if expected_closer else True
+                        embed = build_save_embed(
+                            team=team,
+                            pitcher=pitcher,
+                            stats=stat_line,
+                            score=score,
+                            team_abbr=team_abbr,
                         )
-
-                        if expected_closer and not is_expected_closer:
-                            embed = build_closer_alert_embed(
-                                team=team,
-                                pitcher=pitcher,
-                                expected_closer=expected_closer,
-                                stats=stat_line,
-                                score=score,
-                            )
-                            if post_discord(embed):
-                                posted_events.add(event_key)
-                                total_posted += 1
-                                game_posted += 1
-                                log(f"[BOT] CLOSER ALERT: {pitcher} | {team} | Expected: {expected_closer}")
-                        else:
-                            embed = build_save_embed(team, pitcher, stat_line, score, team_abbr)
-                            if post_discord(embed):
-                                posted_events.add(event_key)
-                                total_posted += 1
-                                game_posted += 1
-                                log(f"[BOT] SAVE: {pitcher} | {team}")
+                        if post_discord(embed):
+                            posted_events.add(event_key)
+                            total_posted += 1
+                            game_posted += 1
+                            log(f"[BOT] SAVE: {pitcher} | {team}")
 
                 if pitching_stats.get("blownSaves", 0) > 0:
                     total_blown_found += 1
@@ -421,7 +368,13 @@ team_abbr = TEAM_ABBR_FIX.get(team_abbr, team_abbr)
                     if event_key in posted_events:
                         log(f"[BOT] Skipping duplicate blown save team alert: {team}")
                     else:
-                        embed = build_blown_embed(team, pitcher, stat_line, score, team_abbr)
+                        embed = build_blown_embed(
+                            team=team,
+                            pitcher=pitcher,
+                            stats=stat_line,
+                            score=score,
+                            team_abbr=team_abbr,
+                        )
                         if post_discord(embed):
                             posted_events.add(event_key)
                             blown_posted_teams.add(team)
