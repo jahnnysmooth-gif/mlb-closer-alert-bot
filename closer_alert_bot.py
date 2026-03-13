@@ -396,7 +396,7 @@ def process_games() -> None:
                                 game_posted += 1
                                 log(f"[BOT] CLOSER ALERT: {pitcher} | {team} | Expected: {expected_closer}")
                         else:
-                            embed = build_save_embed(team, pitcher, stat_line, score)
+                            embed = build_save_embed(team, pitcher, stat_line, score, team_abbr)
                             if post_discord(embed):
                                 posted_events.add(event_key)
                                 total_posted += 1
@@ -416,7 +416,7 @@ def process_games() -> None:
                     if event_key in posted_events:
                         log(f"[BOT] Skipping duplicate blown save team alert: {team}")
                     else:
-                        embed = build_blown_embed(team, pitcher, stat_line, score)
+                        embed = build_blown_embed(team, pitcher, stat_line, score, team_abbr)
                         if post_discord(embed):
                             posted_events.add(event_key)
                             blown_posted_teams.add(team)
