@@ -1,8 +1,7 @@
 import asyncio
+import io
 import json
 import os
-import time
-import io
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -76,11 +75,10 @@ TEAM_COLORS = {
 }
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID"))
+DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))
 POLL_MINUTES = int(os.getenv("POLL_MINUTES", "10"))
-
 STATE_DIR = os.getenv("STATE_DIR", "/var/data")
-STATE_FILE = os.path.join(STATE_DIR, "closer_alert_state_test.json")
+STATE_FILE = os.path.join(STATE_DIR, "closer_alert_state.json")
 
 ET = ZoneInfo("America/New_York")
 
@@ -88,57 +86,89 @@ intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
 
-def log(msg):
-    print(msg, flush=True)
+def log(message: str) -> None:
+    print(message, flush=True)
 
 
-def now_utc():
+def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def now_et():
+def now_et() -> datetime:
     return datetime.now(ET)
 
 
-def ensure_state_dir():
+def in_quiet_hours() -> bool:
+    hour = now_et().hour
+    return 2 <= hour < 13
+
+
+def ensure_state_dir() -> None:
     os.makedirs(STATE_DIR, exist_ok=True)
 
 
-def load_state():
+def load_state() -> dict:
     ensure_state_dir()
     if not os.path.exists(STATE_FILE):
-        return {"posted_events": [], "processed_final_games": {}}
+        return {
+            "posted_events": [],
+            "processed_final_games": {},
+        }
 
-    with open(STATE_FILE, "r") as f:
-        return json.load(f)
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            state = json.load(f)
+    except Exception:
+        state = {}
+
+    state.setdefault("posted_events", [])
+    state.setdefault("processed_final_games", {})
+    return state
 
 
-def save_state(state):
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f)
+def save_state(state: dict) -> None:
+    ensure_state_dir()
+
+    posted_events = state.get("posted_events", [])
+    if len(posted_events) > 5000:
+        state["posted_events"] = posted_events[-3000:]
+
+    processed_final_games = state.get("processed_final_games", {})
+    if len(processed_final_games) > 500:
+        items = list(processed_final_games.items())[-300:]
+        state["processed_final_games"] = dict(items)
+
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2)
 
 
-def get_games():
-    today = now_et().date()
-    yesterday = today - timedelta(days=1)
+def get_games() -> list:
+    today_et = now_et().date()
+    yesterday_et = today_et - timedelta(days=1)
 
     games = []
 
-    for d in [today, yesterday]:
+    for d in [today_et, yesterday_et]:
         url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={d.isoformat()}"
-        r = requests.get(url)
+        r = requests.get(url, timeout=30)
+        r.raise_for_status()
         data = r.json()
 
-        if not data.get("dates"):
-            continue
-
-        games += data["dates"][0]["games"]
+        for date_block in data.get("dates", []):
+            games.extend(date_block.get("games", []))
 
     return games
 
 
-def build_save_embed(team, pitcher, stats, score, team_abbr):
+def build_final_stamp(game: dict) -> str:
+    status = game.get("status", {}).get("detailedState", "")
+    away_score = game.get("teams", {}).get("away", {}).get("score", "")
+    home_score = game.get("teams", {}).get("home", {}).get("score", "")
+    game_date = game.get("gameDate", "")
+    return f"{status}|{away_score}|{home_score}|{game_date}"
 
+
+def build_save_embed(team: str, pitcher: str, stats: str, score: str, team_abbr: str) -> discord.Embed:
     color = TEAM_COLORS.get(team_abbr, 0x2ECC71)
 
     embed = discord.Embed(
@@ -147,18 +177,14 @@ def build_save_embed(team, pitcher, stats, score, team_abbr):
         color=color,
         timestamp=now_utc(),
     )
-
     embed.set_author(name="The Bullpen Coach")
-
     embed.add_field(name="Team", value=team, inline=False)
     embed.add_field(name="Pitcher", value=pitcher, inline=False)
     embed.add_field(name="Pitching Line", value=stats, inline=False)
-
     return embed
 
 
-def build_blown_embed(team, pitcher, stats, score, team_abbr):
-
+def build_blown_embed(team: str, pitcher: str, stats: str, score: str, team_abbr: str) -> discord.Embed:
     color = TEAM_COLORS.get(team_abbr, 0xE67E22)
 
     embed = discord.Embed(
@@ -167,148 +193,239 @@ def build_blown_embed(team, pitcher, stats, score, team_abbr):
         color=color,
         timestamp=now_utc(),
     )
-
     embed.set_author(name="The Bullpen Coach")
-
     embed.add_field(name="Team", value=team, inline=False)
     embed.add_field(name="Pitcher", value=pitcher, inline=False)
     embed.add_field(name="Pitching Line", value=stats, inline=False)
-
     return embed
 
 
-async def send_embed(channel, embed, team_abbr):
-
+async def send_embed(channel: discord.TextChannel, embed: discord.Embed, team_abbr: str) -> None:
     logo_url = TEAM_LOGOS.get(team_abbr)
 
     if not logo_url:
         await channel.send(embed=embed)
         return
 
-    r = requests.get(logo_url)
-    file = discord.File(io.BytesIO(r.content), filename="logo.png")
+    try:
+        r = requests.get(
+            logo_url,
+            timeout=20,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        r.raise_for_status()
 
-    embed.set_thumbnail(url="attachment://logo.png")
+        filename = f"{team_abbr.lower()}.png"
+        file = discord.File(io.BytesIO(r.content), filename=filename)
+        embed.set_thumbnail(url=f"attachment://{filename}")
 
-    await channel.send(embed=embed, file=file)
+        await channel.send(embed=embed, file=file)
+    except Exception as e:
+        log(f"[BOT] Logo fetch/send failed for {team_abbr}: {e}")
+        await channel.send(embed=embed)
 
 
-async def process_games():
-
+async def process_games() -> None:
     state = load_state()
-
-    posted = set(state["posted_events"])
-    processed = state["processed_final_games"]
+    posted_events = set(state.get("posted_events", []))
+    processed_final_games = state.get("processed_final_games", {})
 
     channel = client.get_channel(DISCORD_CHANNEL_ID)
+    if channel is None:
+        log(f"[BOT] ERROR: Could not find channel {DISCORD_CHANNEL_ID}")
+        return
 
     games = get_games()
+    total_final_games_seen = 0
+    total_new_final_games = 0
+    total_saves_found = 0
+    total_blown_found = 0
+    total_posted = 0
+
+    log(f"[BOT] Games found: {len(games)}")
 
     for game in games:
-
-        if game["status"]["detailedState"] != "Final":
+        status = game.get("status", {}).get("detailedState", "")
+        if status != "Final":
             continue
 
-        game_pk = str(game["gamePk"])
+        total_final_games_seen += 1
 
-        if game_pk in processed:
+        game_pk = game.get("gamePk")
+        if not game_pk:
             continue
+
+        game_pk_str = str(game_pk)
+        final_stamp = build_final_stamp(game)
+
+        if processed_final_games.get(game_pk_str) == final_stamp:
+            log(f"[BOT] Skipping already processed final game: {game_pk}")
+            continue
+
+        total_new_final_games += 1
+        log(f"[BOT] Processing new final game: {game_pk}")
 
         url = f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live"
-        data = requests.get(url).json()
+        r = requests.get(url, timeout=30)
+        r.raise_for_status()
+        data = r.json()
 
-        box = data["liveData"]["boxscore"]["teams"]
+        box = data.get("liveData", {}).get("boxscore", {}).get("teams", {})
+        if not box:
+            log(f"[BOT] No boxscore found for game {game_pk}")
+            processed_final_games[game_pk_str] = final_stamp
+            continue
 
-        away = box["away"]
-        home = box["home"]
+        away = box.get("away", {})
+        home = box.get("home", {})
 
-        away_abbr = away["team"].get("abbreviation", "AWAY")
-        home_abbr = home["team"].get("abbreviation", "HOME")
+        away_abbr = game.get("teams", {}).get("away", {}).get("team", {}).get("abbreviation", "AWAY")
+        home_abbr = game.get("teams", {}).get("home", {}).get("team", {}).get("abbreviation", "HOME")
 
-        score = f"{away_abbr} {away['teamStats']['batting']['runs']} - {home_abbr} {home['teamStats']['batting']['runs']}"
+        away_runs = away.get("teamStats", {}).get("batting", {}).get("runs", 0)
+        home_runs = home.get("teamStats", {}).get("batting", {}).get("runs", 0)
+        score = f"{away_abbr} {away_runs} - {home_abbr} {home_runs}"
+
+        game_saves = 0
+        game_blown = 0
+        game_posted = 0
+        blown_posted_teams = set()
 
         for side in ["away", "home"]:
-
-            team_box = box[side]
-
-            team = team_box["team"]["name"]
-            team_abbr = team_box["team"].get("abbreviation", "")
-
-            players = team_box["players"]
+            team_box = box.get(side, {})
+            team = team_box.get("team", {}).get("name", "Unknown Team")
+            team_abbr = away_abbr if side == "away" else home_abbr
+            players = team_box.get("players", {})
 
             for p in players.values():
-
-                pitching = p.get("stats", {}).get("pitching")
-
-                if not pitching:
+                pitching_stats = p.get("stats", {}).get("pitching")
+                if not pitching_stats:
                     continue
 
-                pitcher = p["person"]["fullName"]
+                pitcher = p.get("person", {}).get("fullName", "Unknown Pitcher")
+                pitcher_id = p.get("person", {}).get("id", pitcher)
 
-                ip = pitching.get("inningsPitched", "0.0")
-                h = pitching.get("hits", 0)
-                er = pitching.get("earnedRuns", 0)
-                bb = pitching.get("baseOnBalls", 0)
-                k = pitching.get("strikeOuts", 0)
+                ip = pitching_stats.get("inningsPitched", "0.0")
+                h = pitching_stats.get("hits", 0)
+                er = pitching_stats.get("earnedRuns", 0)
+                bb = pitching_stats.get("baseOnBalls", 0)
+                k = pitching_stats.get("strikeOuts", 0)
 
-                line = f"IP: {ip} | H: {h} | ER: {er} | BB: {bb} | K: {k}"
+                stat_line = f"IP: {ip} | H: {h} | ER: {er} | BB: {bb} | K: {k}"
 
-                if pitching.get("saves", 0) > 0:
+                if pitching_stats.get("saves", 0) > 0:
+                    total_saves_found += 1
+                    game_saves += 1
+                    event_key = f"save_{game_pk}_{pitcher_id}"
 
-                    key = f"save_{game_pk}_{pitcher}"
+                    if event_key in posted_events:
+                        log(f"[BOT] Skipping duplicate save: {pitcher} | {team}")
+                    else:
+                        embed = build_save_embed(
+                            team=team,
+                            pitcher=pitcher,
+                            stats=stat_line,
+                            score=score,
+                            team_abbr=team_abbr,
+                        )
+                        try:
+                            await send_embed(channel, embed, team_abbr)
+                            posted_events.add(event_key)
+                            total_posted += 1
+                            game_posted += 1
+                            log(f"[BOT] SAVE: {pitcher} | {team}")
+                            await asyncio.sleep(1.5)
+                        except Exception as e:
+                            log(f"[BOT] Discord send error on save: {e}")
 
-                    if key not in posted:
+                if pitching_stats.get("blownSaves", 0) > 0:
+                    total_blown_found += 1
+                    game_blown += 1
 
-                        embed = build_save_embed(team, pitcher, line, score, team_abbr)
+                    if team in blown_posted_teams:
+                        log(f"[BOT] Skipping extra blown save for team in same game: {team}")
+                        continue
 
-                        await send_embed(channel, embed, team_abbr)
+                    event_key = f"blown_team_{game_pk}_{team}"
 
-                        posted.add(key)
+                    if event_key in posted_events:
+                        log(f"[BOT] Skipping duplicate blown save team alert: {team}")
+                    else:
+                        embed = build_blown_embed(
+                            team=team,
+                            pitcher=pitcher,
+                            stats=stat_line,
+                            score=score,
+                            team_abbr=team_abbr,
+                        )
+                        try:
+                            await send_embed(channel, embed, team_abbr)
+                            posted_events.add(event_key)
+                            blown_posted_teams.add(team)
+                            total_posted += 1
+                            game_posted += 1
+                            log(f"[BOT] BLOWN SAVE: {pitcher} | {team}")
+                            await asyncio.sleep(1.5)
+                        except Exception as e:
+                            log(f"[BOT] Discord send error on blown save: {e}")
 
-                        log(f"SAVE: {pitcher} | {team}")
+        processed_final_games[game_pk_str] = final_stamp
 
-                if pitching.get("blownSaves", 0) > 0:
+        log(
+            f"[BOT] Game {game_pk} complete | "
+            f"Saves found: {game_saves} | "
+            f"Blown saves found: {game_blown} | "
+            f"Posted: {game_posted}"
+        )
 
-                    key = f"blown_{game_pk}_{team}"
-
-                    if key not in posted:
-
-                        embed = build_blown_embed(team, pitcher, line, score, team_abbr)
-
-                        await send_embed(channel, embed, team_abbr)
-
-                        posted.add(key)
-
-                        log(f"BLOWN SAVE: {pitcher} | {team}")
-
-        processed[game_pk] = True
-
-    state["posted_events"] = list(posted)
-    state["processed_final_games"] = processed
-
+    state["posted_events"] = list(posted_events)
+    state["processed_final_games"] = processed_final_games
     save_state(state)
 
+    log(
+        f"[BOT] Loop summary | "
+        f"Final games seen: {total_final_games_seen} | "
+        f"New finals processed: {total_new_final_games} | "
+        f"Saves found: {total_saves_found} | "
+        f"Blown saves found: {total_blown_found} | "
+        f"Posted this loop: {total_posted}"
+    )
 
-async def loop():
 
+async def polling_loop() -> None:
     await client.wait_until_ready()
 
-    log("Bullpen bot started")
+    log("[BOT] === CLOSER ALERT BOT STARTED ===")
+    log(f"[BOT] Poll interval: {POLL_MINUTES} minutes")
+    log(f"[BOT] State file: {STATE_FILE}")
 
-    while True:
+    while not client.is_closed():
+        current_et = now_et().strftime("%Y-%m-%d %I:%M:%S %p %Z")
+        log(f"[BOT] Loop start | ET time: {current_et}")
 
         try:
-            await process_games()
+            if in_quiet_hours():
+                log("[BOT] Quiet hours active (2:00 AM ET - 1:00 PM ET). Skipping this loop.")
+            else:
+                await process_games()
         except Exception as e:
-            log(e)
+            log(f"[BOT] ERROR: {e}")
 
+        log(f"[BOT] Sleeping {POLL_MINUTES} minutes")
         await asyncio.sleep(POLL_MINUTES * 60)
 
 
 @client.event
 async def on_ready():
-    log(f"Logged in as {client.user}")
-    client.loop.create_task(loop())
+    log(f"[BOT] Logged in as {client.user}")
+    if not hasattr(client, "polling_task"):
+        client.polling_task = asyncio.create_task(polling_loop())
 
 
-client.run(DISCORD_TOKEN)
+if __name__ == "__main__":
+    if not DISCORD_TOKEN:
+        raise RuntimeError("DISCORD_TOKEN is not set")
+    if not DISCORD_CHANNEL_ID:
+        raise RuntimeError("DISCORD_CHANNEL_ID is not set")
+
+    client.run(DISCORD_TOKEN)
