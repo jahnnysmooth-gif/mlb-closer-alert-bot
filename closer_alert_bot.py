@@ -1,5 +1,4 @@
 import asyncio
-import io
 import json
 import os
 from datetime import datetime, timedelta, timezone
@@ -7,39 +6,6 @@ from zoneinfo import ZoneInfo
 
 import discord
 import requests
-
-TEAM_LOGOS = {
-    "ARI": "https://a.espncdn.com/i/teamlogos/mlb/500/ari.png",
-    "ATH": "https://a.espncdn.com/i/teamlogos/mlb/500/oak.png",
-    "ATL": "https://a.espncdn.com/i/teamlogos/mlb/500/atl.png",
-    "BAL": "https://a.espncdn.com/i/teamlogos/mlb/500/bal.png",
-    "BOS": "https://a.espncdn.com/i/teamlogos/mlb/500/bos.png",
-    "CHC": "https://a.espncdn.com/i/teamlogos/mlb/500/chc.png",
-    "CWS": "https://a.espncdn.com/i/teamlogos/mlb/500/chw.png",
-    "CIN": "https://a.espncdn.com/i/teamlogos/mlb/500/cin.png",
-    "CLE": "https://a.espncdn.com/i/teamlogos/mlb/500/cle.png",
-    "COL": "https://a.espncdn.com/i/teamlogos/mlb/500/col.png",
-    "DET": "https://a.espncdn.com/i/teamlogos/mlb/500/det.png",
-    "HOU": "https://a.espncdn.com/i/teamlogos/mlb/500/hou.png",
-    "KC": "https://a.espncdn.com/i/teamlogos/mlb/500/kc.png",
-    "LAA": "https://a.espncdn.com/i/teamlogos/mlb/500/laa.png",
-    "LAD": "https://a.espncdn.com/i/teamlogos/mlb/500/lad.png",
-    "MIA": "https://a.espncdn.com/i/teamlogos/mlb/500/mia.png",
-    "MIL": "https://a.espncdn.com/i/teamlogos/mlb/500/mil.png",
-    "MIN": "https://a.espncdn.com/i/teamlogos/mlb/500/min.png",
-    "NYM": "https://a.espncdn.com/i/teamlogos/mlb/500/nym.png",
-    "NYY": "https://a.espncdn.com/i/teamlogos/mlb/500/nyy.png",
-    "PHI": "https://a.espncdn.com/i/teamlogos/mlb/500/phi.png",
-    "PIT": "https://a.espncdn.com/i/teamlogos/mlb/500/pit.png",
-    "SD": "https://a.espncdn.com/i/teamlogos/mlb/500/sd.png",
-    "SF": "https://a.espncdn.com/i/teamlogos/mlb/500/sf.png",
-    "SEA": "https://a.espncdn.com/i/teamlogos/mlb/500/sea.png",
-    "STL": "https://a.espncdn.com/i/teamlogos/mlb/500/stl.png",
-    "TB": "https://a.espncdn.com/i/teamlogos/mlb/500/tb.png",
-    "TEX": "https://a.espncdn.com/i/teamlogos/mlb/500/tex.png",
-    "TOR": "https://a.espncdn.com/i/teamlogos/mlb/500/tor.png",
-    "WSH": "https://a.espncdn.com/i/teamlogos/mlb/500/wsh.png",
-}
 
 TEAM_COLORS = {
     "ARI": 0xA71930,
@@ -78,7 +44,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))
 POLL_MINUTES = int(os.getenv("POLL_MINUTES", "10"))
 STATE_DIR = os.getenv("STATE_DIR", "/var/data")
-STATE_FILE = os.path.join(STATE_DIR, "closer_alert_state_test2.json")
+STATE_FILE = os.path.join(STATE_DIR, "closer_alert_state.json")
 
 ET = ZoneInfo("America/New_York")
 
@@ -168,9 +134,22 @@ def build_final_stamp(game: dict) -> str:
     return f"{status}|{away_score}|{home_score}|{game_date}"
 
 
-def build_save_embed(team: str, pitcher: str, stats: str, score: str, team_abbr: str) -> discord.Embed:
+def build_logo_url(team_id: int | None) -> str | None:
+    if not team_id:
+        return None
+    return f"https://www.mlbstatic.com/team-logos/{team_id}.svg"
+
+
+def build_save_embed(
+    team: str,
+    pitcher: str,
+    stats: str,
+    score: str,
+    team_abbr: str,
+    team_id: int | None,
+) -> discord.Embed:
     color = TEAM_COLORS.get(team_abbr, 0x2ECC71)
-    logo = TEAM_LOGOS.get(team_abbr)
+    logo_url = build_logo_url(team_id)
 
     embed = discord.Embed(
         title="🚨 SAVE RECORDED",
@@ -180,8 +159,8 @@ def build_save_embed(team: str, pitcher: str, stats: str, score: str, team_abbr:
     )
     embed.set_author(name="The Bullpen Coach")
 
-    if logo:
-        embed.set_thumbnail(url=logo)
+    if logo_url:
+        embed.set_thumbnail(url=logo_url)
 
     embed.add_field(name="Team", value=team, inline=False)
     embed.add_field(name="Pitcher", value=pitcher, inline=False)
@@ -189,9 +168,16 @@ def build_save_embed(team: str, pitcher: str, stats: str, score: str, team_abbr:
     return embed
 
 
-def build_blown_embed(team: str, pitcher: str, stats: str, score: str, team_abbr: str) -> discord.Embed:
+def build_blown_embed(
+    team: str,
+    pitcher: str,
+    stats: str,
+    score: str,
+    team_abbr: str,
+    team_id: int | None,
+) -> discord.Embed:
     color = TEAM_COLORS.get(team_abbr, 0xE67E22)
-    logo = TEAM_LOGOS.get(team_abbr)
+    logo_url = build_logo_url(team_id)
 
     embed = discord.Embed(
         title="⚠️ BLOWN SAVE",
@@ -201,8 +187,8 @@ def build_blown_embed(team: str, pitcher: str, stats: str, score: str, team_abbr
     )
     embed.set_author(name="The Bullpen Coach")
 
-    if logo:
-        embed.set_thumbnail(url=logo)
+    if logo_url:
+        embed.set_thumbnail(url=logo_url)
 
     embed.add_field(name="Team", value=team, inline=False)
     embed.add_field(name="Pitcher", value=pitcher, inline=False)
@@ -210,7 +196,7 @@ def build_blown_embed(team: str, pitcher: str, stats: str, score: str, team_abbr
     return embed
 
 
-async def send_embed(channel: discord.TextChannel, embed: discord.Embed, team_abbr: str) -> None:
+async def send_embed(channel: discord.TextChannel, embed: discord.Embed) -> None:
     await channel.send(embed=embed)
 
 
@@ -268,8 +254,13 @@ async def process_games() -> None:
         away = box.get("away", {})
         home = box.get("home", {})
 
-        away_abbr = game.get("teams", {}).get("away", {}).get("team", {}).get("abbreviation", "AWAY")
-        home_abbr = game.get("teams", {}).get("home", {}).get("team", {}).get("abbreviation", "HOME")
+        away_team_info = game.get("teams", {}).get("away", {}).get("team", {})
+        home_team_info = game.get("teams", {}).get("home", {}).get("team", {})
+
+        away_abbr = away_team_info.get("abbreviation", "AWAY")
+        home_abbr = home_team_info.get("abbreviation", "HOME")
+        away_team_id = away_team_info.get("id")
+        home_team_id = home_team_info.get("id")
 
         away_runs = away.get("teamStats", {}).get("batting", {}).get("runs", 0)
         home_runs = home.get("teamStats", {}).get("batting", {}).get("runs", 0)
@@ -284,6 +275,7 @@ async def process_games() -> None:
             team_box = box.get(side, {})
             team = team_box.get("team", {}).get("name", "Unknown Team")
             team_abbr = away_abbr if side == "away" else home_abbr
+            team_id = away_team_id if side == "away" else home_team_id
             players = team_box.get("players", {})
 
             for p in players.values():
@@ -316,9 +308,10 @@ async def process_games() -> None:
                             stats=stat_line,
                             score=score,
                             team_abbr=team_abbr,
+                            team_id=team_id,
                         )
                         try:
-                            await send_embed(channel, embed, team_abbr)
+                            await send_embed(channel, embed)
                             posted_events.add(event_key)
                             total_posted += 1
                             game_posted += 1
@@ -346,9 +339,10 @@ async def process_games() -> None:
                             stats=stat_line,
                             score=score,
                             team_abbr=team_abbr,
+                            team_id=team_id,
                         )
                         try:
-                            await send_embed(channel, embed, team_abbr)
+                            await send_embed(channel, embed)
                             posted_events.add(event_key)
                             blown_posted_teams.add(team)
                             total_posted += 1
