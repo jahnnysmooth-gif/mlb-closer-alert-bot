@@ -170,6 +170,7 @@ def build_final_stamp(game: dict) -> str:
 
 def build_save_embed(team: str, pitcher: str, stats: str, score: str, team_abbr: str) -> discord.Embed:
     color = TEAM_COLORS.get(team_abbr, 0x2ECC71)
+    logo = TEAM_LOGOS.get(team_abbr)
 
     embed = discord.Embed(
         title="🚨 SAVE RECORDED",
@@ -178,6 +179,10 @@ def build_save_embed(team: str, pitcher: str, stats: str, score: str, team_abbr:
         timestamp=now_utc(),
     )
     embed.set_author(name="The Bullpen Coach")
+
+    if logo:
+        embed.set_thumbnail(url=logo)
+
     embed.add_field(name="Team", value=team, inline=False)
     embed.add_field(name="Pitcher", value=pitcher, inline=False)
     embed.add_field(name="Pitching Line", value=stats, inline=False)
@@ -186,6 +191,7 @@ def build_save_embed(team: str, pitcher: str, stats: str, score: str, team_abbr:
 
 def build_blown_embed(team: str, pitcher: str, stats: str, score: str, team_abbr: str) -> discord.Embed:
     color = TEAM_COLORS.get(team_abbr, 0xE67E22)
+    logo = TEAM_LOGOS.get(team_abbr)
 
     embed = discord.Embed(
         title="⚠️ BLOWN SAVE",
@@ -194,6 +200,10 @@ def build_blown_embed(team: str, pitcher: str, stats: str, score: str, team_abbr
         timestamp=now_utc(),
     )
     embed.set_author(name="The Bullpen Coach")
+
+    if logo:
+        embed.set_thumbnail(url=logo)
+
     embed.add_field(name="Team", value=team, inline=False)
     embed.add_field(name="Pitcher", value=pitcher, inline=False)
     embed.add_field(name="Pitching Line", value=stats, inline=False)
@@ -201,28 +211,7 @@ def build_blown_embed(team: str, pitcher: str, stats: str, score: str, team_abbr
 
 
 async def send_embed(channel: discord.TextChannel, embed: discord.Embed, team_abbr: str) -> None:
-    logo_url = TEAM_LOGOS.get(team_abbr)
-
-    if not logo_url:
-        await channel.send(embed=embed)
-        return
-
-    try:
-        r = requests.get(
-            logo_url,
-            timeout=20,
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-        r.raise_for_status()
-
-        filename = f"{team_abbr.lower()}.png"
-        file = discord.File(io.BytesIO(r.content), filename=filename)
-        embed.set_thumbnail(url=f"attachment://{filename}")
-
-        await channel.send(embed=embed, file=file)
-    except Exception as e:
-        log(f"[BOT] Logo fetch/send failed for {team_abbr}: {e}")
-        await channel.send(embed=embed)
+    await channel.send(embed=embed)
 
 
 async def process_games() -> None:
