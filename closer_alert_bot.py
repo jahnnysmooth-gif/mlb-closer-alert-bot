@@ -7,6 +7,39 @@ from zoneinfo import ZoneInfo
 import discord
 import requests
 
+TEAM_LOGOS = {
+    "ARI": "https://a.espncdn.com/i/teamlogos/mlb/500/ari.png",
+    "ATH": "https://a.espncdn.com/i/teamlogos/mlb/500/oak.png",
+    "ATL": "https://a.espncdn.com/i/teamlogos/mlb/500/atl.png",
+    "BAL": "https://a.espncdn.com/i/teamlogos/mlb/500/bal.png",
+    "BOS": "https://a.espncdn.com/i/teamlogos/mlb/500/bos.png",
+    "CHC": "https://a.espncdn.com/i/teamlogos/mlb/500/chc.png",
+    "CWS": "https://a.espncdn.com/i/teamlogos/mlb/500/chw.png",
+    "CIN": "https://a.espncdn.com/i/teamlogos/mlb/500/cin.png",
+    "CLE": "https://a.espncdn.com/i/teamlogos/mlb/500/cle.png",
+    "COL": "https://a.espncdn.com/i/teamlogos/mlb/500/col.png",
+    "DET": "https://a.espncdn.com/i/teamlogos/mlb/500/det.png",
+    "HOU": "https://a.espncdn.com/i/teamlogos/mlb/500/hou.png",
+    "KC": "https://a.espncdn.com/i/teamlogos/mlb/500/kc.png",
+    "LAA": "https://a.espncdn.com/i/teamlogos/mlb/500/laa.png",
+    "LAD": "https://a.espncdn.com/i/teamlogos/mlb/500/lad.png",
+    "MIA": "https://a.espncdn.com/i/teamlogos/mlb/500/mia.png",
+    "MIL": "https://a.espncdn.com/i/teamlogos/mlb/500/mil.png",
+    "MIN": "https://a.espncdn.com/i/teamlogos/mlb/500/min.png",
+    "NYM": "https://a.espncdn.com/i/teamlogos/mlb/500/nym.png",
+    "NYY": "https://a.espncdn.com/i/teamlogos/mlb/500/nyy.png",
+    "PHI": "https://a.espncdn.com/i/teamlogos/mlb/500/phi.png",
+    "PIT": "https://a.espncdn.com/i/teamlogos/mlb/500/pit.png",
+    "SD": "https://a.espncdn.com/i/teamlogos/mlb/500/sd.png",
+    "SF": "https://a.espncdn.com/i/teamlogos/mlb/500/sf.png",
+    "SEA": "https://a.espncdn.com/i/teamlogos/mlb/500/sea.png",
+    "STL": "https://a.espncdn.com/i/teamlogos/mlb/500/stl.png",
+    "TB": "https://a.espncdn.com/i/teamlogos/mlb/500/tb.png",
+    "TEX": "https://a.espncdn.com/i/teamlogos/mlb/500/tex.png",
+    "TOR": "https://a.espncdn.com/i/teamlogos/mlb/500/tor.png",
+    "WSH": "https://a.espncdn.com/i/teamlogos/mlb/500/wsh.png",
+}
+
 TEAM_COLORS = {
     "ARI": 0xA71930,
     "ATH": 0x003831,
@@ -75,6 +108,7 @@ def ensure_state_dir() -> None:
 
 def load_state() -> dict:
     ensure_state_dir()
+
     if not os.path.exists(STATE_FILE):
         return {
             "posted_events": [],
@@ -134,22 +168,9 @@ def build_final_stamp(game: dict) -> str:
     return f"{status}|{away_score}|{home_score}|{game_date}"
 
 
-def build_logo_url(team_id: int | None) -> str | None:
-    if not team_id:
-        return None
-    return f"https://www.mlbstatic.com/team-logos/{team_id}.svg"
-
-
-def build_save_embed(
-    team: str,
-    pitcher: str,
-    stats: str,
-    score: str,
-    team_abbr: str,
-    team_id: int | None,
-) -> discord.Embed:
+def build_save_embed(team: str, pitcher: str, stats: str, score: str, team_abbr: str) -> discord.Embed:
     color = TEAM_COLORS.get(team_abbr, 0x2ECC71)
-    logo_url = build_logo_url(team_id)
+    logo = TEAM_LOGOS.get(team_abbr)
 
     embed = discord.Embed(
         title="🚨 SAVE RECORDED",
@@ -159,8 +180,8 @@ def build_save_embed(
     )
     embed.set_author(name="The Bullpen Coach")
 
-    if logo_url:
-        embed.set_thumbnail(url=logo_url)
+    if logo:
+        embed.set_thumbnail(url=logo)
 
     embed.add_field(name="Team", value=team, inline=False)
     embed.add_field(name="Pitcher", value=pitcher, inline=False)
@@ -168,16 +189,9 @@ def build_save_embed(
     return embed
 
 
-def build_blown_embed(
-    team: str,
-    pitcher: str,
-    stats: str,
-    score: str,
-    team_abbr: str,
-    team_id: int | None,
-) -> discord.Embed:
+def build_blown_embed(team: str, pitcher: str, stats: str, score: str, team_abbr: str) -> discord.Embed:
     color = TEAM_COLORS.get(team_abbr, 0xE67E22)
-    logo_url = build_logo_url(team_id)
+    logo = TEAM_LOGOS.get(team_abbr)
 
     embed = discord.Embed(
         title="⚠️ BLOWN SAVE",
@@ -187,8 +201,8 @@ def build_blown_embed(
     )
     embed.set_author(name="The Bullpen Coach")
 
-    if logo_url:
-        embed.set_thumbnail(url=logo_url)
+    if logo:
+        embed.set_thumbnail(url=logo)
 
     embed.add_field(name="Team", value=team, inline=False)
     embed.add_field(name="Pitcher", value=pitcher, inline=False)
@@ -196,7 +210,7 @@ def build_blown_embed(
     return embed
 
 
-async def send_embed(channel: discord.TextChannel, embed: discord.Embed) -> None:
+async def send_embed(channel: discord.TextChannel, embed: discord.Embed, team_abbr: str) -> None:
     await channel.send(embed=embed)
 
 
@@ -254,13 +268,8 @@ async def process_games() -> None:
         away = box.get("away", {})
         home = box.get("home", {})
 
-        away_team_info = game.get("teams", {}).get("away", {}).get("team", {})
-        home_team_info = game.get("teams", {}).get("home", {}).get("team", {})
-
-        away_abbr = away_team_info.get("abbreviation", "AWAY")
-        home_abbr = home_team_info.get("abbreviation", "HOME")
-        away_team_id = away_team_info.get("id")
-        home_team_id = home_team_info.get("id")
+        away_abbr = game.get("teams", {}).get("away", {}).get("team", {}).get("abbreviation", "AWAY")
+        home_abbr = game.get("teams", {}).get("home", {}).get("team", {}).get("abbreviation", "HOME")
 
         away_runs = away.get("teamStats", {}).get("batting", {}).get("runs", 0)
         home_runs = home.get("teamStats", {}).get("batting", {}).get("runs", 0)
@@ -275,7 +284,6 @@ async def process_games() -> None:
             team_box = box.get(side, {})
             team = team_box.get("team", {}).get("name", "Unknown Team")
             team_abbr = away_abbr if side == "away" else home_abbr
-            team_id = away_team_id if side == "away" else home_team_id
             players = team_box.get("players", {})
 
             for p in players.values():
@@ -308,10 +316,9 @@ async def process_games() -> None:
                             stats=stat_line,
                             score=score,
                             team_abbr=team_abbr,
-                            team_id=team_id,
                         )
                         try:
-                            await send_embed(channel, embed)
+                            await send_embed(channel, embed, team_abbr)
                             posted_events.add(event_key)
                             total_posted += 1
                             game_posted += 1
@@ -339,10 +346,9 @@ async def process_games() -> None:
                             stats=stat_line,
                             score=score,
                             team_abbr=team_abbr,
-                            team_id=team_id,
                         )
                         try:
-                            await send_embed(channel, embed)
+                            await send_embed(channel, embed, team_abbr)
                             posted_events.add(event_key)
                             blown_posted_teams.add(team)
                             total_posted += 1
