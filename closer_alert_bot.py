@@ -6,7 +6,7 @@ import discord
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+BOT_TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID"))
 
 POLL_MINUTES = int(os.getenv("POLL_MINUTES", "10"))
