@@ -75,7 +75,7 @@ TEAM_COLORS = {
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 POLL_MINUTES = int(os.getenv("POLL_MINUTES", "10"))
 STATE_DIR = os.getenv("STATE_DIR", "/var/data")
-STATE_FILE = os.path.join(STATE_DIR, "closer_alert_state.json")
+STATE_FILE = os.path.join(STATE_DIR, "closer_alert_state_test.json")
 
 ET = ZoneInfo("America/New_York")
 
