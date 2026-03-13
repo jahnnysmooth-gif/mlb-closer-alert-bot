@@ -51,9 +51,8 @@ def log(message: str) -> None:
     print(message, flush=True)
 
 
-def get_logo(team_abbr: str) -> str:
-    key = "oak" if team_abbr == "OAK" else team_abbr.lower()
-    return f"https://a.espncdn.com/i/teamlogos/mlb/500/{key}.png"
+def get_logo(team_id: int) -> str:
+    return f"https://a.espncdn.com/i/teamlogos/mlb/500/{team_id}.png"
 
 
 def now_utc_iso() -> str:
@@ -150,7 +149,7 @@ def post_discord(embed: dict, retries: int = 3) -> bool:
 
 
 def build_save_embed(team: str, pitcher: str, stats: str, score: str, team_abbr: str) -> dict:
-    logo = get_logo(team_abbr) if team_abbr else ""
+    logo = get_logo(team_id) if team_id else ""
     color = TEAM_COLORS.get(team_abbr, 0x2ECC71)
 
     log(f"[DEBUG] SAVE team={team} abbr={team_abbr} logo={logo}")
@@ -291,8 +290,7 @@ def process_games() -> None:
         for side in ["home", "away"]:
             team_box = box.get(side, {})
             team = team_box.get("team", {}).get("name", "Unknown Team")
-            raw_team_obj = team_box.get("team", {})
-            team_abbr = raw_team_obj.get("abbreviation", "").upper()
+            team_id = team_box.get("team", {}).get("id")
 
             log(f"[DEBUG] side={side} team_obj={raw_team_obj}")
             log(f"[DEBUG] parsed team={team} abbr={team_abbr}")
