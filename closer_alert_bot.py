@@ -197,7 +197,7 @@ def post_discord(embed: dict, retries: int = 3) -> bool:
 
 def build_save_embed(team, pitcher, stats, score, team_abbr):
 
-    logo = TEAM_LOGOS.get(team_abbr)
+    logo = f"https://a.espncdn.com/i/teamlogos/mlb/500/{team_abbr.lower()}.png"
     color = TEAM_COLORS.get(team_abbr, 0x2ECC71)
 
     embed = {
@@ -238,7 +238,7 @@ def build_closer_alert_embed(team: str, pitcher: str, expected_closer: str, stat
 
 def build_blown_embed(team, pitcher, stats, score, team_abbr):
 
-    logo = TEAM_LOGOS.get(team_abbr)
+    logo = f"https://a.espncdn.com/i/teamlogos/mlb/500/{team_abbr.lower()}.png"
     color = TEAM_COLORS.get(team_abbr, 0xE67E22)
 
     embed = {
