@@ -71,6 +71,10 @@ TEAM_COLORS = {
     "WSH": 0xAB0003,
 }
 
+TEAM_ABBR_FIX = {
+    "CWS": "CHW",  # White Sox
+}
+
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 POLL_MINUTES = int(os.getenv("POLL_MINUTES", "10"))
 STATE_DIR = os.getenv("STATE_DIR", "/var/data")
@@ -350,6 +354,7 @@ def process_games() -> None:
             team_box = box.get(side, {})
             team = team_box.get("team", {}).get("name", "Unknown Team")
             team_abbr = team_box.get("team", {}).get("abbreviation", "").upper()
+team_abbr = TEAM_ABBR_FIX.get(team_abbr, team_abbr)
             expected_closer = closer_map.get(team_abbr, "")
             players = team_box.get("players", {})
 
