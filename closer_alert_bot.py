@@ -6,6 +6,9 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+def get_logo(team_id: int) -> str:
+    return f"https://a.espncdn.com/i/teamlogos/mlb/500/{team_id}.png"
+
 TEAM_COLORS = {
     "ARI": 0xA71930,
     "ATH": 0x003831,
@@ -292,8 +295,6 @@ def process_games() -> None:
             team = team_box.get("team", {}).get("name", "Unknown Team")
             team_id = team_box.get("team", {}).get("id")
 
-            log(f"[DEBUG] side={side} team_obj={raw_team_obj}")
-            log(f"[DEBUG] parsed team={team} abbr={team_abbr}")
 
             players = team_box.get("players", {})
 
