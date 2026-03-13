@@ -222,8 +222,8 @@ async def process_games():
         away = box["away"]
         home = box["home"]
 
-        away_abbr = away["team"]["abbreviation"]
-        home_abbr = home["team"]["abbreviation"]
+        away_abbr = away["team"].get("abbreviation", "AWAY")
+home_abbr = home["team"].get("abbreviation", "HOME")
 
         score = f"{away_abbr} {away['teamStats']['batting']['runs']} - {home_abbr} {home['teamStats']['batting']['runs']}"
 
@@ -232,7 +232,7 @@ async def process_games():
             team_box = box[side]
 
             team = team_box["team"]["name"]
-            team_abbr = team_box["team"]["abbreviation"]
+            team_abbr = team_box["team"].get("abbreviation", "")
 
             players = team_box["players"]
 
