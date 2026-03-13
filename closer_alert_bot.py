@@ -6,8 +6,10 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+
 def get_logo(team_id: int) -> str:
     return f"https://a.espncdn.com/i/teamlogos/mlb/500/{team_id}.png"
+
 
 TEAM_COLORS = {
     "ARI": 0xA71930,
@@ -52,10 +54,6 @@ ET = ZoneInfo("America/New_York")
 
 def log(message: str) -> None:
     print(message, flush=True)
-
-
-def get_logo(team_id: int) -> str:
-    return f"https://a.espncdn.com/i/teamlogos/mlb/500/{team_id}.png"
 
 
 def now_utc_iso() -> str:
@@ -151,11 +149,18 @@ def post_discord(embed: dict, retries: int = 3) -> bool:
     return False
 
 
-def build_save_embed(team: str, pitcher: str, stats: str, score: str, team_abbr: str) -> dict:
+def build_save_embed(
+    team: str,
+    pitcher: str,
+    stats: str,
+    score: str,
+    team_abbr: str,
+    team_id: int | None,
+) -> dict:
     logo = get_logo(team_id) if team_id else ""
     color = TEAM_COLORS.get(team_abbr, 0x2ECC71)
 
-    log(f"[DEBUG] SAVE team={team} abbr={team_abbr} logo={logo}")
+    log(f"[DEBUG] SAVE team={team} abbr={team_abbr} team_id={team_id} logo={logo}")
 
     embed = {
         "author": {"name": "The Bullpen Coach", "icon_url": logo} if logo else {"name": "The Bullpen Coach"},
@@ -176,11 +181,18 @@ def build_save_embed(team: str, pitcher: str, stats: str, score: str, team_abbr:
     return embed
 
 
-def build_blown_embed(team: str, pitcher: str, stats: str, score: str, team_abbr: str) -> dict:
-    logo = get_logo(team_abbr) if team_abbr else ""
+def build_blown_embed(
+    team: str,
+    pitcher: str,
+    stats: str,
+    score: str,
+    team_abbr: str,
+    team_id: int | None,
+) -> dict:
+    logo = get_logo(team_id) if team_id else ""
     color = TEAM_COLORS.get(team_abbr, 0xE67E22)
 
-    log(f"[DEBUG] BLOWN team={team} abbr={team_abbr} logo={logo}")
+    log(f"[DEBUG] BLOWN team={team} abbr={team_abbr} team_id={team_id} logo={logo}")
 
     embed = {
         "author": {"name": "The Bullpen Coach", "icon_url": logo} if logo else {"name": "The Bullpen Coach"},
@@ -279,8 +291,8 @@ def process_games() -> None:
         away_team_box = box.get("away", {})
         home_team_box = box.get("home", {})
 
-        away_abbr = away_team_box.get("team", {}).get("abbreviation", "AWAY")
-        home_abbr = home_team_box.get("team", {}).get("abbreviation", "HOME")
+        away_abbr = game.get("teams", {}).get("away", {}).get("team", {}).get("abbreviation", "AWAY")
+        home_abbr = game.get("teams", {}).get("home", {}).get("team", {}).get("abbreviation", "HOME")
         away_score = away_team_box.get("teamStats", {}).get("batting", {}).get("runs", 0)
         home_score = home_team_box.get("teamStats", {}).get("batting", {}).get("runs", 0)
         score = f"{away_abbr} {away_score} - {home_abbr} {home_score}"
@@ -294,7 +306,9 @@ def process_games() -> None:
             team_box = box.get(side, {})
             team = team_box.get("team", {}).get("name", "Unknown Team")
             team_id = team_box.get("team", {}).get("id")
+            team_abbr = home_abbr if side == "home" else away_abbr
 
+            log(f"[DEBUG] parsed team={team} abbr={team_abbr} team_id={team_id}")
 
             players = team_box.get("players", {})
 
@@ -328,6 +342,7 @@ def process_games() -> None:
                             stats=stat_line,
                             score=score,
                             team_abbr=team_abbr,
+                            team_id=team_id,
                         )
                         if post_discord(embed):
                             posted_events.add(event_key)
@@ -354,6 +369,7 @@ def process_games() -> None:
                             stats=stat_line,
                             score=score,
                             team_abbr=team_abbr,
+                            team_id=team_id,
                         )
                         if post_discord(embed):
                             posted_events.add(event_key)
