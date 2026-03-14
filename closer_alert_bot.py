@@ -11,7 +11,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))
 POLL_MINUTES = int(os.getenv("POLL_MINUTES", "10"))
 STATE_DIR = os.getenv("STATE_DIR", "/var/data")
-STATE_FILE = os.path.join(STATE_DIR, "closer_alert_state_test20.json")
+STATE_FILE = os.path.join(STATE_DIR, "closer_alert_state.json")
 
 ET = ZoneInfo("America/New_York")
 
