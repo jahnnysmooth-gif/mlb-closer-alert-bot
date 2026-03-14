@@ -11,7 +11,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))
 POLL_MINUTES = int(os.getenv("POLL_MINUTES", "10"))
 STATE_DIR = os.getenv("STATE_DIR", "/var/data")
-STATE_FILE = os.path.join(STATE_DIR, "closer_alert_statetest19.json")
+STATE_FILE = os.path.join(STATE_DIR, "closer_alert_state_test20.json")
 
 ET = ZoneInfo("America/New_York")
 
@@ -232,7 +232,7 @@ def build_save_embed(
     )
 
     if logo:
-        embed.set_author(name=f"{team} Bullpen Alert", icon_url=logo)
+        embed.set_author(name=team, icon_url=logo)
         embed.set_thumbnail(url=logo)
     else:
         embed.set_author(name=f"{team} Bullpen Alert")
@@ -263,7 +263,7 @@ def build_blown_embed(
     )
 
     if logo:
-        embed.set_author(name=f"{team} Bullpen Alert", icon_url=logo)
+        embed.set_author(name=team, icon_url=logo)
         embed.set_thumbnail(url=logo)
     else:
         embed.set_author(name=f"{team} Bullpen Alert")
