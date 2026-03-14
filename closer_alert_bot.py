@@ -11,7 +11,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))
 POLL_MINUTES = int(os.getenv("POLL_MINUTES", "10"))
 STATE_DIR = os.getenv("STATE_DIR", "/var/data")
-STATE_FILE = os.path.join(STATE_DIR, "closer_alert_state_test120.json")
+STATE_FILE = os.path.join(STATE_DIR, "closer_alert_statetest19.json")
 
 ET = ZoneInfo("America/New_York")
 
@@ -171,6 +171,18 @@ def resolve_team_abbr(game: dict, side: str, team_name: str) -> str:
     return TEAM_NAME_TO_ABBR.get(team_name, "")
 
 
+def format_stat_line(ip: str, h: int, er: int, bb: int, k: int) -> str:
+    return f"IP {ip} • H {h} • ER {er} • BB {bb} • K {k}"
+
+
+def build_score_text(away_abbr: str, away_score: int, home_abbr: str, home_score: int) -> str:
+    if away_score > home_score:
+        return f"**{away_abbr} {away_score}** - {home_abbr} {home_score}"
+    if home_score > away_score:
+        return f"{away_abbr} {away_score} - **{home_abbr} {home_score}**"
+    return f"{away_abbr} {away_score} - {home_abbr} {home_score}"
+
+
 def get_games() -> list:
     today_et = now_et().date()
     yesterday_et = today_et - timedelta(days=1)
@@ -197,45 +209,65 @@ def build_final_stamp(game: dict) -> str:
     return f"{status}|{away_score}|{home_score}|{game_date}"
 
 
-def build_save_embed(team: str, pitcher: str, stats: str, score: str, team_abbr: str) -> discord.Embed:
+def build_save_embed(
+    team: str,
+    pitcher: str,
+    stats: str,
+    score: str,
+    team_abbr: str,
+    matchup: str,
+) -> discord.Embed:
     color = TEAM_COLORS.get(team_abbr, 0x2ECC71)
     logo = get_logo(team_abbr)
 
     embed = discord.Embed(
-        title="🚨 SAVE RECORDED",
-        description=f"**Final Score**\n{score}",
+        title=f"🚨 SAVE — {pitcher}",
+        description=(
+            f"⚾ **{matchup}**\n\n"
+            f"**{stats}**\n\n"
+            f"🏁 **Final Score**\n{score}"
+        ),
         color=color,
         timestamp=now_utc(),
     )
-    embed.set_author(name="The Bullpen Coach")
 
     if logo:
+        embed.set_author(name=f"{team} Bullpen Alert", icon_url=logo)
         embed.set_thumbnail(url=logo)
+    else:
+        embed.set_author(name=f"{team} Bullpen Alert")
 
-    embed.add_field(name="Team", value=team, inline=False)
-    embed.add_field(name="Pitcher", value=pitcher, inline=False)
-    embed.add_field(name="Pitching Line", value=stats, inline=False)
     return embed
 
 
-def build_blown_embed(team: str, pitcher: str, stats: str, score: str, team_abbr: str) -> discord.Embed:
-    color = TEAM_COLORS.get(team_abbr, 0xE67E22)
+def build_blown_embed(
+    team: str,
+    pitcher: str,
+    stats: str,
+    score: str,
+    team_abbr: str,
+    matchup: str,
+) -> discord.Embed:
+    color = TEAM_COLORS.get(team_abbr, 0xE74C3C)
     logo = get_logo(team_abbr)
 
     embed = discord.Embed(
-        title="⚠️ BLOWN SAVE",
-        description=f"**Final Score**\n{score}",
+        title=f"⚠️ BLOWN SAVE — {pitcher}",
+        description=(
+            f"⚾ **{matchup}**\n\n"
+            f"**{stats}**\n\n"
+            f"🏁 **Final Score**\n{score}"
+        ),
         color=color,
         timestamp=now_utc(),
     )
-    embed.set_author(name="The Bullpen Coach")
 
     if logo:
+        embed.set_author(name=f"{team} Bullpen Alert", icon_url=logo)
         embed.set_thumbnail(url=logo)
+    else:
+        embed.set_author(name=f"{team} Bullpen Alert")
 
-    embed.add_field(name="Team", value=team, inline=False)
-    embed.add_field(name="Pitcher", value=pitcher, inline=False)
-    embed.add_field(name="Pitching Line", value=stats, inline=False)
     return embed
 
 
@@ -312,7 +344,14 @@ async def process_games() -> None:
 
         away_score = away_team_box.get("teamStats", {}).get("batting", {}).get("runs", 0)
         home_score = home_team_box.get("teamStats", {}).get("batting", {}).get("runs", 0)
-        score = f"{away_abbr or 'AWAY'} {away_score} - {home_abbr or 'HOME'} {home_score}"
+
+        matchup = f"{away_abbr or 'AWAY'} @ {home_abbr or 'HOME'}"
+        score = build_score_text(
+            away_abbr or "AWAY",
+            away_score,
+            home_abbr or "HOME",
+            home_score,
+        )
 
         game_saves = 0
         game_blown = 0
@@ -339,7 +378,7 @@ async def process_games() -> None:
                 bb = pitching_stats.get("baseOnBalls", 0)
                 k = pitching_stats.get("strikeOuts", 0)
 
-                stat_line = f"IP: {ip} | H: {h} | ER: {er} | BB: {bb} | K: {k}"
+                stat_line = format_stat_line(ip, h, er, bb, k)
 
                 if pitching_stats.get("saves", 0) > 0:
                     total_saves_found += 1
@@ -355,6 +394,7 @@ async def process_games() -> None:
                             stats=stat_line,
                             score=score,
                             team_abbr=team_abbr,
+                            matchup=matchup,
                         )
                         try:
                             await channel.send(embed=embed)
@@ -385,6 +425,7 @@ async def process_games() -> None:
                             stats=stat_line,
                             score=score,
                             team_abbr=team_abbr,
+                            matchup=matchup,
                         )
                         try:
                             await channel.send(embed=embed)
